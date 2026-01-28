@@ -1,0 +1,9 @@
+[package]
+name = "terminal_demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.33.3"
+nix = { version = "0.31.0", features = ["term"] }
+unicode-width = "0.1"
