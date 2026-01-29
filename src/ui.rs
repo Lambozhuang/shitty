@@ -1,5 +1,5 @@
 use eframe::egui;
-use nix::libc::{TIOCSWINSZ, ioctl, winsize};
+use nix::libc::{killpg, pid_t, tcgetpgrp, TIOCSWINSZ, SIGWINCH, ioctl, winsize};
 use std::os::fd::AsRawFd;
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -12,6 +12,8 @@ pub(crate) struct TerminalUI {
     grid: TerminalGrid,
     font_id: egui::FontId,
     master_fd: std::os::fd::OwnedFd,
+    slave_fd: std::os::fd::OwnedFd,
+    shell_pgid: pid_t,
 }
 
 impl TerminalUI {
@@ -19,6 +21,8 @@ impl TerminalUI {
         rx: Receiver<Vec<u8>>,
         tx_input: Sender<Vec<u8>>,
         master_fd: std::os::fd::OwnedFd,
+        slave_fd: std::os::fd::OwnedFd,
+        shell_pgid: pid_t,
     ) -> Self {
         Self {
             rx,
@@ -26,6 +30,8 @@ impl TerminalUI {
             grid: TerminalGrid::new(80, 24),
             font_id: egui::FontId::monospace(14.0),
             master_fd,
+            slave_fd,
+            shell_pgid,
         }
     }
 
@@ -77,6 +83,12 @@ impl eframe::App for TerminalUI {
                 let rows = rows.max(1);
                 if self.grid.resize(cols, rows) {
                     set_winsize_raw(self.master_fd.as_raw_fd(), cols as u16, rows as u16);
+                    let pgid = unsafe { tcgetpgrp(self.slave_fd.as_raw_fd()) };
+                    let target_pgid = if pgid > 0 { pgid } else { self.shell_pgid };
+                    unsafe {
+                        let _ = killpg(target_pgid, SIGWINCH);
+                    }
+                    ctx.request_repaint();
                 }
 
                 while let Ok(bytes) = self.rx.try_recv() {

@@ -1,9 +1,9 @@
 use eframe::egui;
-use nix::libc::setsid;
+use nix::libc::{ioctl, setsid, TIOCSCTTY};
 use nix::pty::openpty;
 use nix::unistd::{read, write};
 use std::fs;
-use std::os::fd::{AsFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::sync::mpsc::channel;
@@ -17,7 +17,7 @@ pub fn run() -> eframe::Result<()> {
 
     let master_fd = pty_result.master;
     let slave_fd = pty_result.slave;
-    spawn_shell(&slave_fd);
+    let shell_pgid = spawn_shell(&slave_fd);
 
     eframe::run_native(
         "terminal",
@@ -31,12 +31,19 @@ pub fn run() -> eframe::Result<()> {
             let ctx = cc.egui_ctx.clone();
 
             let master_ui = master_fd.try_clone().expect("master fd clone failed");
+            let slave_ui = slave_fd.try_clone().expect("slave fd clone failed");
             let master_read = master_fd.try_clone().expect("master fd clone failed");
             let master_write = master_fd;
 
             spawn_pty_threads(master_read, master_write, tx_output, rx_input, ctx);
 
-            Ok(Box::new(TerminalUI::new(rx_output, tx_input, master_ui)))
+            Ok(Box::new(TerminalUI::new(
+                rx_output,
+                tx_input,
+                master_ui,
+                slave_ui,
+                shell_pgid,
+            )))
         }),
     )
 }
@@ -67,18 +74,21 @@ fn configure_fonts(cc: &eframe::CreationContext<'_>) {
     }
 }
 
-fn spawn_shell(slave_fd: &OwnedFd) {
+fn spawn_shell(slave_fd: &OwnedFd) -> i32 {
     unsafe {
-        Command::new("/bin/zsh")
+        let ctty_fd = slave_fd.try_clone().expect("slave fd clone failed");
+        let child = Command::new("/bin/zsh")
             .stdin(slave_fd.try_clone().expect("slave fd clone failed"))
             .stdout(slave_fd.try_clone().expect("slave fd clone failed"))
             .stderr(slave_fd.try_clone().expect("slave fd clone failed"))
-            .pre_exec(|| {
+            .pre_exec(move || {
                 let _ = setsid();
+                let _ = ioctl(ctty_fd.as_raw_fd(), TIOCSCTTY as _, 0);
                 Ok(())
             })
             .spawn()
             .expect("Failed to spawn shell");
+        child.id() as i32
     }
 }
 
