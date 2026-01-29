@@ -1,0 +1,78 @@
+use eframe::egui;
+
+pub(crate) fn append_input_from_event(
+    event: &egui::Event,
+    mods: egui::Modifiers,
+    out: &mut Vec<u8>,
+) {
+    match event {
+        egui::Event::Text(text) => {
+            if !mods.ctrl {
+                out.extend_from_slice(text.as_bytes());
+            }
+        }
+        egui::Event::Key {
+            key,
+            pressed,
+            modifiers,
+            ..
+        } if *pressed => {
+            if *key == egui::Key::Escape {
+                out.push(0x1b);
+            } else if modifiers.ctrl {
+                if let Some(byte) = ctrl_key_byte(*key) {
+                    out.push(byte);
+                }
+            } else {
+                let _ = push_key_bytes(*key, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn ctrl_key_byte(key: egui::Key) -> Option<u8> {
+    let name = key.name();
+    let bytes = name.as_bytes();
+    if bytes.len() == 1 {
+        let b = bytes[0];
+        if (b'A'..=b'Z').contains(&b) {
+            return Some(b - b'A' + 1);
+        }
+    }
+    None
+}
+
+fn push_key_bytes(key: egui::Key, out: &mut Vec<u8>) -> bool {
+    match key {
+        egui::Key::Enter => out.push(b'\r'),
+        egui::Key::Backspace => out.push(0x7f),
+        egui::Key::Tab => out.push(b'\t'),
+        egui::Key::ArrowUp => out.extend_from_slice(b"\x1b[A"),
+        egui::Key::ArrowDown => out.extend_from_slice(b"\x1b[B"),
+        egui::Key::ArrowRight => out.extend_from_slice(b"\x1b[C"),
+        egui::Key::ArrowLeft => out.extend_from_slice(b"\x1b[D"),
+        _ => {
+            let name = key.name();
+            let Some(rest) = name.strip_prefix('F') else {
+                return false;
+            };
+            let Ok(n) = rest.parse::<u8>() else {
+                return false;
+            };
+            if !(1..=10).contains(&n) {
+                return false;
+            }
+            if n <= 4 {
+                out.extend_from_slice(&[0x1b, b'O', b'P' + (n - 1)]);
+            } else {
+                let code = [15u8, 17, 18, 19, 20, 21][(n - 5) as usize];
+                out.extend_from_slice(b"\x1b[");
+                out.push(b'0' + (code / 10));
+                out.push(b'0' + (code % 10));
+                out.push(b'~');
+            }
+        }
+    }
+    true
+}
