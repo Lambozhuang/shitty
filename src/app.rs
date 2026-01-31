@@ -20,7 +20,7 @@ pub fn run() -> eframe::Result<()> {
     let shell_pgid = spawn_shell(&slave_fd);
 
     eframe::run_native(
-        "terminal",
+        "shitty",
         eframe::NativeOptions::default(),
         Box::new(|cc| {
             configure_visuals(cc);
