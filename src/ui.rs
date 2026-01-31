@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::egui::{self, EventFilter};
 use nix::libc::{killpg, pid_t, tcgetpgrp, TIOCSWINSZ, SIGWINCH, ioctl, winsize};
 use std::os::fd::AsRawFd;
 use std::sync::mpsc::{Receiver, Sender};

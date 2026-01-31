@@ -38,11 +38,7 @@ pub fn run() -> eframe::Result<()> {
             spawn_pty_threads(master_read, master_write, tx_output, rx_input, ctx);
 
             Ok(Box::new(TerminalUI::new(
-                rx_output,
-                tx_input,
-                master_ui,
-                slave_ui,
-                shell_pgid,
+                rx_output, tx_input, master_ui, slave_ui, shell_pgid,
             )))
         }),
     )
@@ -99,19 +95,17 @@ fn spawn_pty_threads(
     rx_input: std::sync::mpsc::Receiver<Vec<u8>>,
     ctx: egui::Context,
 ) {
-    thread::spawn(move || {
-        loop {
-            let mut buffer = [0u8; 2048];
-            match read(master_read.as_fd(), &mut buffer) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if tx_output.send(buffer[..n].to_vec()).is_err() {
-                        break;
-                    }
-                    ctx.request_repaint();
+    thread::spawn(move || loop {
+        let mut buffer = [0u8; 2048];
+        match read(master_read.as_fd(), &mut buffer) {
+            Ok(0) => break,
+            Ok(n) => {
+                if tx_output.send(buffer[..n].to_vec()).is_err() {
+                    break;
                 }
-                Err(_) => break,
+                ctx.request_repaint();
             }
+            Err(_) => break,
         }
     });
 
